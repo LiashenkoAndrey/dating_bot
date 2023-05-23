@@ -1,0 +1,14 @@
+module\telegram_utils\UpdateReceiver.class
+module\telegram_utils\exceptions\ControllerException.class
+module\domain\User.class
+module\domain\User$UserBuilder.class
+module\telegram_utils\annotations\Command.class
+module\telegram_utils\annotations\CallBackFun.class
+module\Bot.class
+module\domain\Sex.class
+module\domain\RegSteps.class
+module\controllers\MainController.class
+module\Main.class
+module\telegram_utils\controllers\ControllerService.class
+module\telegram_utils\MethodExecutor.class
+module\controllers\CallBackController.class
