@@ -19,7 +19,9 @@ import java.io.Serializable;
 @Table(name = "user_location")
 public class UserLocation implements Serializable {
 
-    public UserLocation(Location loc) {
+
+    public UserLocation(User user, Location loc) {
+        this.user = user;
         Address address = loc.getAddress();
         this.longitude = loc.getLon();
         this.latitude = loc.getLat();
@@ -27,7 +29,7 @@ public class UserLocation implements Serializable {
         this.city = address.getCity();
         this.village = address.getVillage();
         this.district = address.getDistrict();
-
+        this.borough = address.getBorough();
     }
 
     @Id
@@ -47,7 +49,13 @@ public class UserLocation implements Serializable {
 
     private String village;
 
+
     private String locality;
+
+
+    private String state;
+
+    private String borough;
 }
 
 

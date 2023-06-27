@@ -5,6 +5,5 @@ public enum RegSteps {
     AGE,
     SEX,
     ABOUT,
-    PHOTOS,
-    END
+    LOCATION,
 }

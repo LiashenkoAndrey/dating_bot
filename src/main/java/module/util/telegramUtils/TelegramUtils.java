@@ -27,21 +27,19 @@ public class TelegramUtils {
     }
 
     public static String printUpdate(Update update) {
+        StringBuilder sb = new StringBuilder("\n\nUpdate:\n\t");
 
-        CallbackQuery query = null;
-        Message message = getMessage(update);
-        User user = message.getFrom();
-
-        StringBuilder sb = new StringBuilder();
-        sb.append("\n\nUpdate:\n\t");
         if (update.hasCallbackQuery()) {
+            CallbackQuery query;
             query = update.getCallbackQuery();
             sb.append(
                     "hasCallBack: true\n" +
                     "\t\tData: "+ query.getData() +
-                    "\n\t\tFrom: " + message.getFrom().getId()
+                    "\n\t\tFrom: " + query.getFrom().getId()
             );
         } else {
+            Message message = getMessage(update);
+            User user = message.getFrom();
             sb.append(
                     "hasCallBack: false" +
                             "\n\tMessage:" +

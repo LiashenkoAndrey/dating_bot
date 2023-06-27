@@ -2,11 +2,8 @@ package module.util;
 
 import module.dao.UserDao;
 import module.dao.UserDaoQuery;
-import module.domain.persistentEntities.User;
+import module.domain.persistentEntities.*;
 import module.domain.UserCash;
-import module.domain.persistentEntities.UserFilter;
-import module.domain.persistentEntities.UserLocation;
-import module.domain.persistentEntities.UserPhoto;
 import module.util.exeptions.PersistenceConfigurationException;
 import module.util.exeptions.UserDaoException;
 import org.hibernate.HibernateException;
@@ -28,24 +25,12 @@ public class HibernateUtils {
 
     public static final Map<Long, UserCash> userCashMap = new HashMap<>();
 
-    public static void execute(UserDaoQuery query) {
-        try {
-            Session session = getSessionFactory().openSession();
-            session.beginTransaction();
 
-            query.execute(session);
-
-            session.getTransaction().commit();
-            session.close();
-        } catch (HibernateException e) {
-            logger.info(e.toString());
-            throw new UserDaoException(e);
-        }
-    }
 
     private static final StandardServiceRegistryBuilder registryBuilder = new StandardServiceRegistryBuilder().applySettings(
             Map.of(
                     "hibernate.dialect", "org.hibernate.dialect.PostgreSQL9Dialect",
+                    "hibernate.metadata_builder_contributor","module.util.SqlFunctionsMetadataBuilderContributor",
                     "hibernate.connection.url", "jdbc:postgresql://localhost:5432/dating_bot",
                     "hibernate.connection.password", "admin",
                     "hibernate.connection.username", "postgres",
@@ -65,6 +50,7 @@ public class HibernateUtils {
                     .addAnnotatedClass(UserLocation.class)
                     .addAnnotatedClass(UserPhoto.class)
                     .addAnnotatedClass(UserFilter.class)
+                    .addAnnotatedClass(Like.class)
                     .buildMetadata()
                     .buildSessionFactory();
         } catch (Exception ex) {

@@ -18,7 +18,7 @@ import static module.util.HibernateUtils.unregisteredUserMap;
 
 @DIBean
 @NoArgsConstructor
-public class SettingsCallBackController extends CallBackController {
+public class SettingsCallBackController extends Controller {
 
     private static final Logger logger = LoggerFactory.getLogger(SettingsCallBackController.class);
 

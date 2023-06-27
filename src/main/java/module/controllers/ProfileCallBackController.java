@@ -2,23 +2,22 @@ package module.controllers;
 
 import lombok.NoArgsConstructor;
 import module.domain.Address;
-import module.domain.Location;
 import module.domain.LocationFinder;
 import module.domain.UserCash;
 import module.domain.persistentEntities.User;
 import module.domain.persistentEntities.UserFilter;
+import module.domain.persistentEntities.UserLocation;
 import module.domain.persistentEntities.UserPhoto;
 import module.domain.enums.FindBy;
-import module.domain.enums.RegSteps;
 import module.domain.enums.Sex;
 import module.util.exeptions.CallBackControllerException;
 import module.util.telegramUtils.TelegramUtils;
 import module.util.telegramUtils.annotations.CallBackFun;
 import org.open.cdi.annotations.DIBean;
+import org.open.cdi.annotations.InjectBean;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.telegram.telegrambots.meta.api.methods.send.SendMessage;
-import org.telegram.telegrambots.meta.api.methods.updatingmessages.DeleteMessage;
 import org.telegram.telegrambots.meta.api.methods.updatingmessages.EditMessageText;
 import org.telegram.telegrambots.meta.api.objects.*;
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.InlineKeyboardMarkup;
@@ -30,9 +29,7 @@ import org.telegram.telegrambots.meta.exceptions.TelegramApiException;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Set;
 
-import static java.lang.Integer.SIZE;
 import static java.lang.Integer.parseInt;
 import static module.controllers.ControllerUtils.*;
 import static module.util.HibernateUtils.unregisteredUserMap;
@@ -41,174 +38,130 @@ import static module.util.telegramUtils.TelegramUtils.*;
 
 @DIBean
 @NoArgsConstructor
-public class ProfileCallBackController extends CallBackController {
+public class ProfileCallBackController extends Controller {
 
     private static final Logger logger = LoggerFactory.getLogger(ProfileCallBackController.class);
+
+    @InjectBean
+    public LocationFinder finder;
+
 
 
     @CallBackFun
     public void registration() {
+        Update update = getUpdate();
+        Message message = getMessage(update);
+        Long userId = getUserIdFromUpdate(update);
         try {
-            Update update = (Update) manager.find("Update");
-            Message message = getMessage(update);
-            Long userId = getUserIdFromUpdate(update);
 
             User user = unregisteredUserMap.get(userId);
-            String chatId;
+            UserCash cash = user.getUserCash();
+            if (cash.getCurrentMethod() == null) cash.setCurrentMethod("registration");
 
-            if (user.getUserCash().getRegStep() == null) {
-                user.setChat_id(message.getChatId());
-                user.getUserCash().setRegStep(RegSteps.NAME);
-                user.getUserCash().setCurrentMethod("registration");
-
-                unregisteredUserMap.put(userId, user);
-                chatId = message.getChatId().toString();
-            } else chatId = user.getChat_id().toString();
-
+            Long chatId = user.getChat_id();
             switch (user.getUserCash().getRegStep().toString()) {
                 case "NAME" -> {
-                    bot.execute(new SendMessage(chatId, "Твоє ім'я: "));
-                    user.getUserCash().nextStep();
+
+                    cash.nextStep();
+                    bot.execute(EditMessageText.builder()
+                            .chatId(chatId)
+                            .messageId(cash.getLastMessageId())
+                            .text("Твоє ім'я: ")
+                            .build());
                 }
 
                 case "SEX" -> {
+                    deleteLastMessages(user);
                     user.setName(message.getText());
 
-                    bot.execute(SendMessage.builder()
+                    Message message1 = bot.execute(SendMessage.builder()
+                            .chatId(chatId)
                             .text("Ти дівчина/хлопець?")
                             .replyMarkup(new InlineKeyboardMarkup(List.of(
-                                    ControllerUtils.createOneRowBtn("Дівчина", "sex"),
-                                    ControllerUtils.createOneRowBtn("Хлопець", "sex")
+                                    ControllerUtils.createOneRowBtn("Дівчина", "sex?FEMALE"),
+                                    ControllerUtils.createOneRowBtn("Хлопець", "sex?MALE")
                             )))
+                            .build());
+
+                    cash.setLastMessageId(message1.getMessageId());
+                }
+
+                case "AGE" -> {
+                    cash.nextStep();
+
+                    bot.execute(EditMessageText.builder()
                             .chatId(chatId)
+                                    .messageId(cash.getLastMessageId())
+                            .text("Скільки тобі років?")
                             .build());
                 }
-                case "AGE" -> {
-                    user.setSex(Sex.female);
-                    user.getUserCash().nextStep();
-                    bot.execute(new SendMessage(chatId, "Скільки тобі років?"));
-                }
+
                 case "ABOUT" -> {
+                    deleteLastMessages(user);
+                    cash.nextStep();
+
                     user.setAge(parseInt(message.getText()));
-                    user.getUserCash().nextStep();
-                    bot.execute(new SendMessage(chatId, "Напиши щось круте про себе :)"));
+
+                    Message message1 = bot.execute(SendMessage.builder()
+                            .chatId(chatId)
+                            .text("Напиши щось круте про себе :)")
+                            .build());
+
+                    cash.setLastMessageId(message1.getMessageId());
                 }
-                case "PHOTOS" -> {
+
+                case "LOCATION" -> {
+                    deleteLastMessages(user);
+
                     user.setAbout(message.getText());
-                    user.getUserCash().setCurrentMethod("loadPhotos");
-                    loadPhotos();
+                    cash.setCurrentMethod(null);
+                    userLocation();
                 }
 
                 default -> logger.error("default step");
             }
-
         } catch (TelegramApiException e) {
-            logger.error(e.getMessage());
+            unregisteredUserMap.remove(userId);
+
+            logger.error(e.toString());
             throw new CallBackControllerException(e);
         }
     }
 
 
-
     @CallBackFun
-    public void loadPhotos() {
-        Update update = (Update) manager.find("Update");
-
-        Message message = getMessage(update);
-        User user = userDao.getByTelegramId(message.getFrom().getId());
-
-
+    public void userLocation() {
         try {
-            if (message.getPhoto() == null) {
-                bot.execute(new SendMessage(user.getChat_id().toString(), "Тепер по черзі відправ свої фото (2-3)"));
-            } else {
+            Update update = getUpdate();
+            User user = unregisteredUserMap.get(getUserIdFromUpdate(update));
+            UserCash cash = user.getUserCash();
 
-                List<PhotoSize> photos = message.getPhoto();
-                String fieldId = photos.get(photos.size() -1).getFileId();
 
-                SendMessage sendMessage = SendMessage.builder()
-                        .chatId(user.getChat_id().toString())
-                        .text("0_0")
-                        .build();
-                logger.info("SIZE OF PHOTO IS : " + user.getPhotos().size());
-                switch (user.getPhotos().size()) {
+            if (cash.getCurrentMethod() == null) {
 
-                    case 0 -> {
-                        user.getPhotos().add(new UserPhoto(fieldId));
-                        sendMessage.setText("1 фото з 3 завантажено");
-                        bot.execute(sendMessage);
-                    }
-                    case 1 -> {
-                        user.getPhotos().add(new UserPhoto(fieldId));
-                        sendMessage.setText("2 фото з 3 завантажено");
-                        sendMessage.setReplyMarkup(new InlineKeyboardMarkup(List.of(createOneRowBtn("Це все", "saveUser"))));
-                        bot.execute(sendMessage);
-                    }
-                    case 2 -> {
-                        user.getPhotos().add(new UserPhoto(fieldId));
-                        userDao.save(user);
-                        profile();
-                    }
+                Message message1 = bot.execute(SendMessage.builder()
+                        .chatId(user.getChat_id())
+                        .text("Надати локацію")
+                        .replyMarkup( new ReplyKeyboardMarkup(List.of(new KeyboardRow(List.of(
+                                KeyboardButton.builder()
+                                .text("Надати мою локацію")
+                                .requestLocation(true)
+                                .build())))))
+                        .build());
+                cash.setLastMessageId(message1.getMessageId());
+                cash.setCurrentMethod("userLocation");
 
-                    default -> logger.error("default step");
-                }
+            } else if (update.getMessage().getLocation() != null) {
+                deleteLastMessages(user);
+                Location telegramLoc = update.getMessage().getLocation();
+
+                module.domain.Location location = finder.getMatchedLocations(telegramLoc.getLatitude() +"," + telegramLoc.getLongitude()).get(0);
+                logger.info(location.getAddress().toString());
+                user.setLocation(new UserLocation(user, location));
+
+                cash.setCurrentMethod("loadPhotos");
+                loadPhotos();
             }
-        }  catch (TelegramApiException ex) {
-            logger.error(ex.getMessage());
-            throw new CallBackControllerException(ex);
-        }
-    }
-
-
-    @CallBackFun
-    public void saveUser() {
-        Update update = (Update) manager.find("Update");
-        Long userId = getUserIdFromUpdate(update);
-        User user = unregisteredUserMap.get(userId);
-        userDao.save(user);
-        unregisteredUserMap.remove(userId);
-        profile();
-    }
-
-    @CallBackFun
-    public void profile() {
-        methodExecutor.invokeCommand("/profile");
-    }
-
-    @CallBackFun
-    public void settings() {
-        methodExecutor.invokeCommand("/settings");
-    }
-
-
-    @CallBackFun
-    public void sex() {
-        Update update = (Update) manager.find("Update");
-        User user = unregisteredUserMap.get(update.getCallbackQuery().getFrom().getId());
-
-        String text = update.getCallbackQuery().getMessage().getText();
-        Sex sex = text.equals("Дівчина") ? Sex.female : Sex.male;
-        user.setSex(sex);
-        user.getUserCash().nextStep();
-        registration();
-    }
-
-
-
-
-    @CallBackFun
-    public void getPreferredLocation() {
-        try {
-            Update update = (Update) manager.find("Update");
-            User user = unregisteredUserMap.get(update.getCallbackQuery().getFrom().getId());
-            KeyboardButton button1 = new KeyboardButton("Надати мою локацію");
-            button1.setRequestLocation(true);
-
-            bot.execute(SendMessage.builder()
-                    .replyMarkup( new ReplyKeyboardMarkup(List.of(new KeyboardRow(List.of(button1)))))
-                    .text("Надати локацію")
-//                    .chatId(user.getChatId())
-                    .build());
 
         } catch (Exception ex) {
             logger.error(ex.getMessage());
@@ -216,7 +169,81 @@ public class ProfileCallBackController extends CallBackController {
         }
     }
 
+    @CallBackFun
+    public void loadPhotos() {
+        Update update = getUpdate();
+        Long userId = getUserIdFromUpdate(update);
+        try {
+            Message message = getMessage(update);
+            User user = unregisteredUserMap.get(userId);
+            UserCash cash = user.getUserCash();
+            if (message.getPhoto() == null) {
+                Message message1 = bot.execute(new SendMessage(user.getChat_id().toString(), "Тепер по черзі відправ свої фото (2-5)"));
+                cash.setLastMessageId(message1.getMessageId());
+            } else {
+                deleteLastMessages(user);
 
+                List<PhotoSize> responsePhoto = message.getPhoto();
+                String fieldId = responsePhoto.get(responsePhoto.size() -1).getFileId();
+
+                SendMessage sendMessage = SendMessage.builder()
+                        .chatId(user.getChat_id().toString())
+                        .text("0_0")
+                        .build();
+
+                List<UserPhoto> photos = user.getPhotos();
+
+                photos.add(new UserPhoto(user,fieldId));
+                int size = photos.size();
+
+                if (size < 5) {
+                    sendMessage.setText(size  +" фото з 5 завантажено");
+
+                    if (size > 1) {
+                        sendMessage.setReplyMarkup(new InlineKeyboardMarkup(List.of(
+                                createOneRowBtn("Це все", "saveUser")
+                        )));
+
+                    }
+                    Message message1 = bot.execute(sendMessage);
+                    cash.setLastMessageId(message1.getMessageId());
+                } else {
+                    user.setUserFilter(UserFilter.buildDefaultFilter(user));
+                    userDao.save(user);
+                    unregisteredUserMap.remove(userId);
+                    cash.setCurrentMethod(null);
+                    methodExecutor.invokeCommand("/profile");
+                }
+
+            }
+        }  catch (TelegramApiException ex) {
+            unregisteredUserMap.remove(userId);
+            logger.error(ex.getMessage());
+            throw new CallBackControllerException(ex);
+        }
+    }
+
+    @CallBackFun
+    public void saveUser() {
+        Long userId = getUserIdFromUpdate(getUpdate());
+        User user = unregisteredUserMap.get(userId);
+        user.setUserFilter(UserFilter.buildDefaultFilter(user));
+
+        userDao.save(user);
+
+        unregisteredUserMap.remove(userId);
+        methodExecutor.invokeCommand("/profile");
+    }
+
+    @CallBackFun
+    public void sex(String sexStr) throws TelegramApiException {
+        Update update = getUpdate();
+        User user = unregisteredUserMap.get(getUserIdFromUpdate(update));
+
+        user.setSex(Sex.valueOf(sexStr));
+        user.getUserCash().nextStep();
+        registration();
+    }
 
     @CallBackFun
     public void filters() {
@@ -292,7 +319,6 @@ public class ProfileCallBackController extends CallBackController {
         }
     }
 
-
     @CallBackFun
     public void updateAgeBtn(String age) {
         Long userId = TelegramUtils.getUserIdFromUpdate(getUpdate());
@@ -348,8 +374,6 @@ public class ProfileCallBackController extends CallBackController {
             }
         }
     }
-
-
 
     @CallBackFun
     public void updateLocationFilter() {
@@ -498,8 +522,6 @@ public class ProfileCallBackController extends CallBackController {
         }
     }
 
-
-
     @CallBackFun
     public void updateFilterState() throws TelegramApiException {
         Update update = getUpdate();
@@ -595,6 +617,4 @@ public class ProfileCallBackController extends CallBackController {
         userDao.update(user);
         filters();
     }
-
-
 }

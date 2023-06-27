@@ -3,7 +3,9 @@ package module.domain;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import module.domain.enums.FindBy;
+import module.domain.persistentEntities.UserLocation;
 import module.exeptions.ServiceException;
+import org.open.cdi.annotations.DIBean;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -15,6 +17,7 @@ import java.util.stream.Collectors;
 
 import static module.util.NetworkUtils.readResponse;
 
+@DIBean
 public class LocationFinder {
 
     private static final Logger logger = LoggerFactory.getLogger(LocationFinder.class);
@@ -26,6 +29,16 @@ public class LocationFinder {
         con.setRequestMethod("GET");
         return new ObjectMapper().readValue(readResponse(con.getInputStream()), new TypeReference<>(){});
     }
+
+    public static void main(String[] args) throws IOException {
+        LocationFinder finder = new LocationFinder();
+
+        finder.getMatchedLocations("50.4386067,30.3327594").forEach(location -> System.out.println(location.getAddress()));
+
+    }
+//    public UserLocation getUserLocation(double lon, double lat) throws IOException {
+//
+//    }
 
     public Set<Address> filterLocations(String locName, FindBy findBy) {
         try {

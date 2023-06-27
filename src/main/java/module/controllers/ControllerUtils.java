@@ -20,7 +20,7 @@ public class ControllerUtils {
         return InlineKeyboardButton.builder()
                 .text(text)
                 .callbackData(callbackData)
-                .callbackData(callbackData).build();
+                .build();
     }
 
     public static boolean ageIsValid(String str) {

@@ -90,10 +90,6 @@ public class User implements Serializable {
     private List<UserPhoto> photos = new ArrayList<>();
 
 
-    @Getter(AccessLevel.NONE)
-    @Setter(AccessLevel.NONE)
-    private transient UserCash userCash;
-
     public UserCash getUserCash() {
         if (userCashMap.containsKey(this.telegram_id)) return userCashMap.get(this.telegram_id);
         else {

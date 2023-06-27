@@ -2,14 +2,15 @@ package module.domain.persistentEntities;
 
 import lombok.Getter;
 import lombok.NoArgsConstructor;
+import lombok.Setter;
 import org.hibernate.annotations.Immutable;
 
 import javax.persistence.*;
 import javax.validation.constraints.NotNull;
 
 @Entity
-@Immutable
 @Getter
+@Setter
 @NoArgsConstructor
 @Table(name = "user_photos")
 public class UserPhoto {

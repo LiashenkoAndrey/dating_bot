@@ -68,6 +68,7 @@ public class UserFilter {
 
         filter.setAge_from(user.getAge() - 1);
         filter.setAge_to(user.getAge() + 1);
+        filter.setUser(user);
         return filter;
     }
 

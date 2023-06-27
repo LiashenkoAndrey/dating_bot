@@ -1,31 +1,27 @@
 package module.controllers;
 
 import lombok.NoArgsConstructor;
-import lombok.SneakyThrows;
 import module.Bot;
+import module.dao.LikeDao;
 import module.dao.UserDao;
+import module.domain.UserCash;
+import module.domain.persistentEntities.Like;
 import module.domain.persistentEntities.User;
-import module.util.exeptions.CallBackControllerException;
-import module.util.telegramUtils.MethodExecutor;
 import module.util.telegramUtils.TelegramUtils;
 import module.util.telegramUtils.annotations.Command;
-import org.open.cdi.BeanManager;
 import org.open.cdi.annotations.DIBean;
 import org.open.cdi.annotations.InjectBean;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.telegram.telegrambots.meta.api.methods.send.SendMediaGroup;
 import org.telegram.telegrambots.meta.api.methods.send.SendMessage;
-import org.telegram.telegrambots.meta.api.methods.updatingmessages.EditMessageReplyMarkup;
 import org.telegram.telegrambots.meta.api.methods.updatingmessages.EditMessageText;
 import org.telegram.telegrambots.meta.api.objects.Message;
 import org.telegram.telegrambots.meta.api.objects.Update;
 import org.telegram.telegrambots.meta.api.objects.media.InputMedia;
 import org.telegram.telegrambots.meta.api.objects.media.InputMediaPhoto;
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.InlineKeyboardMarkup;
-import org.telegram.telegrambots.meta.api.objects.replykeyboard.ReplyKeyboardMarkup;
-import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.KeyboardButton;
-import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.KeyboardRow;
+import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.InlineKeyboardButton;
 import org.telegram.telegrambots.meta.exceptions.TelegramApiException;
 
 import java.util.*;
@@ -33,112 +29,79 @@ import java.util.*;
 import static module.controllers.ControllerUtils.createOneRowBtn;
 import static module.controllers.ControllerUtils.createRowBtn;
 import static module.util.HibernateUtils.unregisteredUserMap;
+import static module.util.telegramUtils.TelegramUtils.getMessage;
 import static module.util.telegramUtils.TelegramUtils.getUserIdFromUpdate;
 
 @DIBean
 @NoArgsConstructor
-public class CommandController {
+public class CommandController extends Controller {
     private static final Logger logger = LoggerFactory.getLogger(CommandController.class);
 
     @InjectBean
     public Bot bot;
 
     @InjectBean
-    public TelegramUtils utils;
+    public LikeDao likeDao;
 
     @InjectBean
     public UserDao userDao;
 
-    @InjectBean
-    public MethodExecutor methodExecutor;
-
-    @InjectBean("BeanManager")
-    public BeanManager beanManager;
-
 
     @Command("/start")
-    public void start() {
-        Update update = (Update) beanManager.find("Update");
-        Long userId = update.getMessage().getFrom().getId();
+    public void start() throws TelegramApiException {
+        Update update = getUpdate();
+        Long userId = getUserIdFromUpdate(update);
+        Message message = getMessage(update);
 
-        unregisteredUserMap.put(userId, new User(userId));
-        try {
-            bot.execute(SendMessage.builder()
-                            .text("Привіт це чат бот знайомств bluadki\nГотовий(a) почати? Давай не соромся:) Буде круто!")
-                            .chatId(update.getMessage().getChatId())
-                            .replyMarkup(new InlineKeyboardMarkup(List.of(createOneRowBtn("Нова анкета", "registration"))))
-                    .build());
-        } catch (TelegramApiException ex) {
-            logger.error(ex.getMessage());
-            ex.printStackTrace();
-        }
+        User user = new User(userId);
+        user.setChat_id(message.getChatId());
+        unregisteredUserMap.put(userId, user);
+
+        Message message1 = printInlineKeyboard(
+                message.getChatId(),
+                "Привіт це чат бот знайомств bluadki\nГотовий(a) почати? Давай не соромся:) Буде круто!",
+                List.of(createOneRowBtn("Нова анкета", "registration"))
+        );
+        user.getUserCash().setLastMessageId(message1.getMessageId());
+
     }
 
     @Command("/profile")
-    public void profile() {
+    public void profile() throws TelegramApiException {
 
-        try {
-            Update update = (Update) beanManager.find("Update");
-            Long userId = getUserIdFromUpdate(update);
-            User user;
-            if (userDao.isRegistered(userId)) {
-                user = userDao.getByTelegramId(userId);
-            } else {
-                user = unregisteredUserMap.get(userId);
-            }
-            Long chatId = user.getChat_id();
+        Long userId = TelegramUtils.getUserIdFromUpdate(getUpdate());
+        User user = userDao.getByTelegramId(userId);
+        Long chatId = user.getChat_id();
+        UserCash cash = user.getUserCash();
 
+        List<InputMedia> inputMediaList = new ArrayList<>();
+        user.getPhotos().forEach(photo -> inputMediaList.add(new InputMediaPhoto(photo.getPhoto_id())));
 
-            List<InputMedia> inputMediaList = new ArrayList<>();
-            user.getPhotos().forEach(photo -> inputMediaList.add(new InputMediaPhoto(photo.getPhoto_id())));
+        String caption = user.getName() + "\n" + user.getAge() + "\n" + user.getAbout();
+        inputMediaList.get(inputMediaList.size()-1).setCaption(caption);
 
-            String caption = user.getName() + "\n" + user.getAge() + "\n" + user.getAbout();
-            inputMediaList.get(inputMediaList.size()-1).setCaption(caption);
+        deleteLastMessages(user);
 
-            InlineKeyboardMarkup markup = new InlineKeyboardMarkup(List.of(
-                    List.of(
-                            createRowBtn("Замінити фото\uD83D\uDDBC️", "newPhotos"),
-                            createRowBtn("Меню", "menu")
-                    ),
-                    createOneRowBtn("Переробити анкету", "createNewProfile")
-            ));
+        List<Message> photosMsg = bot.execute(new SendMediaGroup(chatId.toString(), inputMediaList));
+        Message message = bot.execute(SendMessage.builder()
+                .chatId(chatId)
+                .text("Моя анкета")
+                .replyMarkup(new InlineKeyboardMarkup(List.of(
+                        List.of(
+                                createRowBtn("Замінити фото\uD83D\uDDBC️", "newPhotos"),
+                                createRowBtn("Меню", "menu")
+                        ),
+                        createOneRowBtn("Переробити анкету", "createNewProfile")
+                )))
+                .build());
 
-            String messageText = "Моя анкета";
-
-            if (user.getUserCash().getLastMessageId() == null) {
-                bot.execute(new SendMediaGroup(chatId.toString(), inputMediaList));
-                Message message = bot.execute(SendMessage.builder()
-                        .chatId(chatId)
-                        .text(messageText)
-                        .replyMarkup(markup)
-                        .build());
-
-                user.getUserCash().setLastMessageId(message.getMessageId());
-
-            } else {
-                bot.execute(EditMessageText.builder()
-                                .messageId(user.getUserCash().getLastMessageId())
-                                .chatId(chatId)
-                                .text(messageText)
-                        .build());
-
-                bot.execute(EditMessageReplyMarkup.builder()
-                        .messageId(user.getUserCash().getLastMessageId())
-                        .chatId(chatId)
-                        .replyMarkup(markup)
-                        .build());
-            }
-
-
-        } catch (TelegramApiException ex) {
-            logger.error(ex.toString());
-            throw new CallBackControllerException(ex);
-        }
+        photosMsg.forEach((p) -> cash.getLastMessagesPhotoIds().add(p.getMessageId()));
+        cash.setLastMessageId(message.getMessageId());
     }
 
     @Command("/settings")
     public void settings() throws TelegramApiException {
-        Update update = (Update) beanManager.find("Update");
+        Update update = getUpdate();
 
         Long userId = getUserIdFromUpdate(update);
         User user = userDao.getByTelegramId(userId);
@@ -174,22 +137,71 @@ public class CommandController {
         }
     }
 
+    @Command("/menu")
+    public void menu() {
+        try {
+            Long userId = TelegramUtils.getUserIdFromUpdate(getUpdate());
+            User user = userDao.getByTelegramId(userId);
+            Long chatId = user.getChat_id();
+            UserCash cash = user.getUserCash();
 
-    @SneakyThrows
-    @Command("/show_location")
-    public void show_location() {
-        Update update = (Update) beanManager.find("Update");
 
-        KeyboardButton button1 = new KeyboardButton("Надати мою локацію");
-        button1.setRequestLocation(true);
-        Message message = bot.execute(SendMessage.builder()
-                .replyMarkup( new ReplyKeyboardMarkup(List.of(new KeyboardRow(List.of(button1)))))
-                .text("Надати локацію")
-                .chatId(update.getMessage().getChatId())
-                .build());
+            deleteLastProfilePhotos(user);
+
+            List<Like> likes = likeDao.getLikesListOfLikedUser(user.getId());
+
+
+            var myProfileBtn =  createRowBtn("Моя анкета", "profile");
+            var searchBtn = createRowBtn("<< Пошук >>", "search");
+            var likesBtn = createRowBtn("Лайки(" + likes.size() +")", "showLikes");
+            var settingsBtn = createRowBtn("Налаштування", "settings");
+            List<List<InlineKeyboardButton>> btnsList;
+
+            if (likes.size() == 0) {
+                btnsList = List.of(
+                        List.of(
+                                myProfileBtn,
+                                searchBtn,
+                                settingsBtn
+                        )
+                );
+            } else {
+                btnsList = List.of(
+                        List.of(
+                                myProfileBtn,
+                                searchBtn
+                        ),
+                        List.of(
+                                likesBtn,
+                                settingsBtn
+                        )
+                );
+            }
+            String messageText = "Меню";
+
+            if (cash.getLastMessageId() == null) {
+                Message sentMessage = bot.execute(SendMessage.builder()
+                        .chatId(chatId)
+                        .text(messageText)
+                        .replyMarkup(new InlineKeyboardMarkup(btnsList))
+                        .build());
+                cash.setLastMessageId(sentMessage.getMessageId());
+            } else {
+                Integer msgId = user.getUserCash().getLastMessageId();
+
+                bot.execute(EditMessageText.builder()
+                        .messageId(msgId)
+                        .replyMarkup(new InlineKeyboardMarkup(btnsList))
+                        .chatId(chatId)
+                        .text("Меню")
+                        .build());
+            }
+
+        } catch (Exception ex) {
+            logger.error(ex.getMessage());
+            ex.printStackTrace();
+        }
     }
-
-
 
 
 

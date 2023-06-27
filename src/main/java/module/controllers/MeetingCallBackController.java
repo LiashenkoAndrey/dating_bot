@@ -6,7 +6,7 @@ import org.open.cdi.annotations.DIBean;
 
 @DIBean
 @NoArgsConstructor
-public class MeetingCallBackController extends CallBackController {
+public class MeetingCallBackController extends Controller {
 
 
     @CallBackFun

@@ -2,12 +2,12 @@ package module.controllers;
 
 import lombok.NoArgsConstructor;
 import module.Bot;
+import module.controllers.exceptions.ControllerException;
 import module.dao.UserDao;
 
 import module.domain.persistentEntities.User;
 import module.util.telegramUtils.MethodExecutor;
 
-import module.util.telegramUtils.TelegramUtils;
 import org.open.cdi.BeanManager;
 import org.open.cdi.annotations.DIBean;
 import org.open.cdi.annotations.InjectBean;
@@ -25,17 +25,12 @@ import java.util.List;
 
 @NoArgsConstructor
 @DIBean
-public class CallBackController {
+public class Controller {
 
-    private static final Logger logger = LoggerFactory.getLogger(CallBackController.class);
-
-
+    private static final Logger logger = LoggerFactory.getLogger(Controller.class);
 
     @InjectBean
     public Bot bot;
-
-    @InjectBean
-    public TelegramUtils utils;
 
     @InjectBean
     public UserDao userDao;
@@ -45,27 +40,63 @@ public class CallBackController {
     @InjectBean("BeanManager")
     public BeanManager manager;
 
-
     public Update getUpdate() {
-        return  (Update) manager.find("Update");
+        return (Update) manager.find("Update");
     }
 
-    protected void deleteLastMessages(User user) throws TelegramApiException {
-        long chatId = user.getChat_id();
-        bot.execute(DeleteMessage.builder()
-                .messageId(user.getUserCash().getLastMessageId())
-                .chatId(chatId)
-                .build());
+    protected void deleteLastMessages(User user) {
+        try {
+            long chatId = user.getChat_id();
 
-        for (Integer id : user.getUserCash().getLastMessagesId()) {
+            if (user.getUserCash().getLastMessageId() != null){
+                bot.execute(DeleteMessage.builder()
+                        .messageId(user.getUserCash().getLastMessageId())
+                        .chatId(chatId)
+                        .build());
+            }
+
+            for (Integer id : user.getUserCash().getLastMessagesId()) {
+                bot.execute(DeleteMessage.builder()
+                        .messageId(id)
+                        .chatId(chatId)
+                        .build());
+
+            }
+            user.getUserCash().setLastMessageId(null);
+            user.getUserCash().getLastMessagesId().clear();
+
+        } catch (TelegramApiException e) {
+            logger.error(e.toString());
+            throw new ControllerException(e);
+        }
+    }
+
+    protected void deleteLastMessage(User user) {
+        try {
+            long chatId = user.getChat_id();
+            if (user.getUserCash().getLastMessageId() != null){
+                bot.execute(DeleteMessage.builder()
+                        .messageId(user.getUserCash().getLastMessageId())
+                        .chatId(chatId)
+                        .build());
+            }
+            user.getUserCash().setLastMessageId(null);
+
+        } catch (TelegramApiException e) {
+            logger.error(e.toString());
+            throw new ControllerException(e);
+        }
+    }
+
+    protected void deleteLastProfilePhotos(User user) throws TelegramApiException {
+        for (Integer id : user.getUserCash().getLastMessagesPhotoIds()) {
             bot.execute(DeleteMessage.builder()
                     .messageId(id)
-                    .chatId(chatId)
+                    .chatId(user.getChat_id())
                     .build());
 
         }
-        user.getUserCash().setLastMessageId(null);
-        user.getUserCash().getLastMessagesId().clear();
+        user.getUserCash().getLastMessagesPhotoIds().clear();
     }
 
     protected void printMessageIsIllegal(Long chatId) throws TelegramApiException {
@@ -83,4 +114,5 @@ public class CallBackController {
                 .replyMarkup(new InlineKeyboardMarkup(buttons))
                 .build());
     }
+
 }

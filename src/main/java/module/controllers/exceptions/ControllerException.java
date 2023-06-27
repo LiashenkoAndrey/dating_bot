@@ -1,4 +1,4 @@
-package module.util.telegramUtils.exceptions;
+package module.controllers.exceptions;
 
 public class ControllerException extends RuntimeException {
 
